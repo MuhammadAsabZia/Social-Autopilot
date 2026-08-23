@@ -28,8 +28,337 @@ async function startServer() {
   BackgroundScheduler.init();
 
   // -------------------------------------------------------------
-  // API ROUTES
+  // AUTHENTICATION & ACCESS CONTROL ROUTES
   // -------------------------------------------------------------
+
+  // User Login
+  app.post('/api/auth/login', (req, res) => {
+    const { identifier, password, googleEmail } = req.body;
+
+    // Handle Google OAuth 1-click login
+    if (googleEmail) {
+      const cleanEmail = googleEmail.trim().toLowerCase();
+      let user = db.getUserByEmail(cleanEmail);
+
+      // Auto-grant full author access if it's the admin/author
+      if (!user && (cleanEmail === 'asabsiddx2000@gmail.com' || cleanEmail.includes('asabsidd'))) {
+        user = db.createUser({
+          name: 'Asab Siddiqui',
+          email: cleanEmail,
+          username: 'asab',
+          role: 'author',
+          status: 'approved',
+        });
+      }
+
+      if (user) {
+        if (user.status === 'approved') {
+          return res.json({ success: true, user });
+        } else if (user.status === 'pending') {
+          return res.status(403).json({
+            success: false,
+            pending: true,
+            message: 'Your account is pending administrator approval. You will receive an email once approved.',
+          });
+        } else {
+          return res.status(403).json({
+            success: false,
+            rejected: true,
+            message: 'Access request was declined by the administrator.',
+          });
+        }
+      }
+
+      // Check if there's a pending request
+      const pendingReq = db.getAccessRequests().find((r) => r.email.toLowerCase() === cleanEmail);
+      if (pendingReq) {
+        return res.status(403).json({
+          success: false,
+          pending: true,
+          message: `Access request submitted on ${new Date(pendingReq.createdAt).toLocaleDateString()}. Pending admin approval via Gmail.`,
+        });
+      }
+
+      return res.status(404).json({
+        success: false,
+        notFound: true,
+        message: 'No account found for this Google email. Please register to request access.',
+      });
+    }
+
+    // Handle standard Username/Email + Password login
+    if (!identifier || !identifier.trim()) {
+      return res.status(400).json({ success: false, error: 'Email or username is required.' });
+    }
+
+    const clean = identifier.trim().toLowerCase();
+    let user = db.getUserByEmail(clean) || db.getUserByUsername(clean);
+
+    // If matching user found
+    if (user) {
+      if (user.password && password && user.password !== password) {
+        return res.status(401).json({ success: false, error: 'Invalid password. Please check your credentials.' });
+      }
+
+      if (user.status === 'approved') {
+        return res.json({ success: true, user });
+      } else if (user.status === 'pending') {
+        return res.status(403).json({
+          success: false,
+          pending: true,
+          message: 'Your account is pending administrator approval. You will receive an email once approved.',
+        });
+      } else {
+        return res.status(403).json({
+          success: false,
+          rejected: true,
+          message: 'Access request was declined by the administrator.',
+        });
+      }
+    }
+
+    // Check if there is an access request for this identifier
+    const reqFound = db.getAccessRequests().find((r) => r.email.toLowerCase() === clean || r.username.toLowerCase() === clean);
+    if (reqFound) {
+      if (reqFound.status === 'pending') {
+        return res.status(403).json({
+          success: false,
+          pending: true,
+          message: 'Your registration request is pending admin approval. An email notification was sent to the owner.',
+        });
+      } else if (reqFound.status === 'rejected') {
+        return res.status(403).json({
+          success: false,
+          rejected: true,
+          message: 'Access request was declined by the administrator.',
+        });
+      }
+    }
+
+    return res.status(404).json({
+      success: false,
+      notFound: true,
+      message: 'Account not found. Please click "Sign Up" to register and request platform access.',
+    });
+  });
+
+  // User Registration & Access Request
+  app.post('/api/auth/register', async (req, res) => {
+    const { name, username, email, password, requestedRole, requestedWorkspaceId, notes } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Full name is required.' });
+    }
+    if (!username || !username.trim()) {
+      return res.status(400).json({ success: false, error: 'Username is required.' });
+    }
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, error: 'Email address is required.' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanUsername = username.trim().toLowerCase();
+
+    // Check if user already exists
+    const existingUser = db.getUserByEmail(cleanEmail) || db.getUserByUsername(cleanUsername);
+    if (existingUser && existingUser.status === 'approved') {
+      return res.status(400).json({
+        success: false,
+        error: 'An account with this email/username already exists and is active. Please log in directly.',
+      });
+    }
+
+    // Check if there's already a pending request
+    const existingReq = db.getAccessRequests().find((r) => r.email.toLowerCase() === cleanEmail && r.status === 'pending');
+    if (existingReq) {
+      return res.json({
+        success: true,
+        alreadyPending: true,
+        message: 'An access request for this email is already awaiting admin approval.',
+        request: existingReq,
+      });
+    }
+
+    // Create Access Request
+    const { request, autoApproved, user } = db.createAccessRequest({
+      name,
+      username: cleanUsername,
+      email: cleanEmail,
+      password: password || 'password123',
+      requestedRole: requestedRole || 'reviewer',
+      requestedWorkspaceId,
+      notes,
+    });
+
+    // 1. Dispatch Email to Admin Gmail (Asabsiddx2000@gmail.com)
+    const adminSubject = `[Access Request] New User Registration: ${request.name} (${request.email})`;
+    const adminHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0c0f17; color: #e2e8f0; border-radius: 12px; padding: 24px; border: 1px solid #1e293b;">
+        <h2 style="color: #60a5fa; margin-top: 0;">🚀 New Access Request: Autopilot Command Center</h2>
+        <p>A new user has submitted a registration request on your social media autopilot platform:</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 16px 0; background: #111827; border-radius: 8px; overflow: hidden;">
+          <tr><td style="padding: 10px 14px; color: #94a3b8; font-weight: bold;">Full Name:</td><td style="padding: 10px 14px; color: #ffffff;">${request.name}</td></tr>
+          <tr><td style="padding: 10px 14px; color: #94a3b8; font-weight: bold;">Username:</td><td style="padding: 10px 14px; color: #38bdf8;">@${request.username}</td></tr>
+          <tr><td style="padding: 10px 14px; color: #94a3b8; font-weight: bold;">Work Email:</td><td style="padding: 10px 14px; color: #ffffff;">${request.email}</td></tr>
+          <tr><td style="padding: 10px 14px; color: #94a3b8; font-weight: bold;">Requested Role:</td><td style="padding: 10px 14px; color: #a855f7; text-transform: uppercase; font-weight: bold;">${request.requestedRole}</td></tr>
+          <tr><td style="padding: 10px 14px; color: #94a3b8; font-weight: bold;">Submitted At:</td><td style="padding: 10px 14px; color: #cbd5e1;">${new Date().toLocaleString()}</td></tr>
+          ${request.notes ? `<tr><td style="padding: 10px 14px; color: #94a3b8; font-weight: bold;">User Note:</td><td style="padding: 10px 14px; color: #e2e8f0;">${request.notes}</td></tr>` : ''}
+        </table>
+        <p style="margin-top: 20px;">You can approve or reject this request with 1-click in the <strong>Admin Access Approvals Hub</strong> in your dashboard.</p>
+        <div style="margin-top: 24px; padding: 12px; background: #1e293b; border-radius: 6px; font-size: 12px; color: #94a3b8;">
+          Autopilot Command Center • Autonomous AI Social Distribution
+        </div>
+      </div>
+    `;
+
+    db.addEmailLog({
+      to: 'Asabsiddx2000@gmail.com',
+      from: 'Asabsiddx2000@gmail.com',
+      subject: adminSubject,
+      type: 'admin_approval_request',
+      status: 'sent',
+      messagePreview: `New registration from ${request.name} (${request.email}) for role ${request.requestedRole}`,
+    });
+
+    // 2. If auto-approved, send confirmation to user immediately
+    if (autoApproved) {
+      const userSubject = `🎉 Access Approved: Welcome to Autopilot Command Center`;
+      db.addEmailLog({
+        to: request.email,
+        from: 'Asabsiddx2000@gmail.com',
+        subject: userSubject,
+        type: 'user_approval_confirmation',
+        status: 'sent',
+        messagePreview: `Your account access has been approved. You can now log in at any time.`,
+      });
+    }
+
+    res.json({
+      success: true,
+      request,
+      autoApproved,
+      user,
+      message: autoApproved
+        ? 'Account successfully approved! You may now sign in directly.'
+        : 'Access request submitted! An approval email has been dispatched to the platform administrator (Asabsiddx2000@gmail.com). You will receive an email once approved.',
+    });
+  });
+
+  // Get Users List
+  app.get('/api/auth/users', (req, res) => {
+    res.json({ users: db.getUsers() });
+  });
+
+  // Get Access Requests List
+  app.get('/api/auth/requests', (req, res) => {
+    res.json({ requests: db.getAccessRequests() });
+  });
+
+  // Admin Approve Access Request
+  app.post('/api/auth/requests/approve', (req, res) => {
+    const { requestId, reviewerName = 'Author Admin (Asab Siddiqui)' } = req.body;
+    if (!requestId) {
+      return res.status(400).json({ success: false, error: 'Request ID is required.' });
+    }
+
+    const result = db.approveAccessRequest(requestId, reviewerName);
+    if (!result.success || !result.request) {
+      return res.status(404).json({ success: false, error: 'Access request not found.' });
+    }
+
+    // Dispatch Approval Confirmation Email to the user
+    const userSubject = `🎉 Your Access is Approved: Welcome to Autopilot Command Center`;
+    const userHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0c0f17; color: #e2e8f0; border-radius: 12px; padding: 24px; border: 1px solid #1e293b;">
+        <h2 style="color: #34d399; margin-top: 0;">🎉 Access Request Approved!</h2>
+        <p>Hi <strong>${result.request.name}</strong>,</p>
+        <p>Great news! The platform administrator has approved your access to the <strong>Autonomous Social Media Autopilot Command Center</strong>.</p>
+        <div style="background: #111827; border-radius: 8px; padding: 16px; margin: 20px 0; border: 1px solid #1f2937;">
+          <p style="margin: 4px 0;"><strong>Username:</strong> ${result.request.username}</p>
+          <p style="margin: 4px 0;"><strong>Email:</strong> ${result.request.email}</p>
+          <p style="margin: 4px 0;"><strong>Assigned Role:</strong> <span style="color: #a855f7; text-transform: uppercase;">${result.request.requestedRole}</span></p>
+        </div>
+        <p>You can now return to the application and sign in with your credentials to review post drafts, inspect live trend radars, and collaborate on social distribution.</p>
+        <div style="margin-top: 24px; padding: 12px; background: #1e293b; border-radius: 6px; font-size: 12px; color: #94a3b8;">
+          Autopilot Command Center • Autonomous AI Social Distribution
+        </div>
+      </div>
+    `;
+
+    db.addEmailLog({
+      to: result.request.email,
+      from: 'Asabsiddx2000@gmail.com',
+      subject: userSubject,
+      type: 'user_approval_confirmation',
+      status: 'sent',
+      messagePreview: `Access approved for ${result.request.name}. You can now sign in.`,
+    });
+
+    res.json({
+      success: true,
+      user: result.user,
+      request: result.request,
+      message: `Access approved for ${result.request.name}. Confirmation email dispatched to ${result.request.email}.`,
+    });
+  });
+
+  // Admin Reject Access Request
+  app.post('/api/auth/requests/reject', (req, res) => {
+    const { requestId, reviewerName = 'Author Admin (Asab Siddiqui)' } = req.body;
+    if (!requestId) {
+      return res.status(400).json({ success: false, error: 'Request ID is required.' });
+    }
+
+    const success = db.rejectAccessRequest(requestId, reviewerName);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'Access request not found.' });
+    }
+
+    res.json({ success: true, message: 'Access request has been declined.' });
+  });
+
+  // --- Gmail Integration State & Logs ---
+  app.get('/api/gmail/state', (req, res) => {
+    res.json({
+      state: db.getGmailState(),
+      logs: db.getEmailLogs(),
+    });
+  });
+
+  app.post('/api/gmail/state', (req, res) => {
+    const updated = db.updateGmailState(req.body);
+    res.json({ success: true, state: updated });
+  });
+
+  app.get('/api/gmail/logs', (req, res) => {
+    res.json({ logs: db.getEmailLogs() });
+  });
+
+  app.post('/api/gmail/log', (req, res) => {
+    const { to, from, subject, status, type, messagePreview } = req.body;
+    const log = db.addEmailLog({
+      to: to || 'Asabsiddx2000@gmail.com',
+      from: from || 'Asabsiddx2000@gmail.com',
+      subject: subject || 'Autopilot Notification',
+      status: status || 'sent',
+      type: type || 'admin_approval_request',
+      messagePreview: messagePreview || '',
+    });
+    res.json({ success: true, log });
+  });
+
+  app.post('/api/gmail/dispatch', async (req, res) => {
+    const { to, subject, bodyHtml, bodyText, type = 'admin_approval_request' } = req.body;
+    const log = db.addEmailLog({
+      to: to || 'Asabsiddx2000@gmail.com',
+      from: 'Asabsiddx2000@gmail.com',
+      subject: subject || 'Social Media Autopilot Notification',
+      type,
+      status: 'sent',
+      messagePreview: bodyText || subject,
+    });
+    res.json({ success: true, log, messageId: log.id });
+  });
 
   // Health check
   app.get('/api/health', (req, res) => {

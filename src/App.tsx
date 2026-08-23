@@ -54,6 +54,8 @@ import { WorkspaceSwitcher } from './components/WorkspaceSwitcher.js';
 import { DEFAULT_PROFILES, UserProfileModal } from './components/UserProfileModal.js';
 import { HelpCenterModal } from './components/HelpCenterModal.js';
 import { SearchCommandPaletteModal } from './components/SearchCommandPaletteModal.js';
+import { AuthGatewayModal } from './components/AuthGatewayModal.js';
+import { AdminApprovalHubModal } from './components/AdminApprovalHubModal.js';
 import {
   AutopilotRunProgress,
   BrandBrainConfig,
@@ -62,6 +64,7 @@ import {
   SchedulerState,
   SocialMediaPostGroup,
   TrendCandidate,
+  UserAccount,
   UserProfile,
   WeeklyStrategyInsight,
   WorkspaceProfile,
@@ -152,6 +155,13 @@ export function App() {
   const [showPipelineModal, setShowPipelineModal] = useState(false);
   const [showPostStudioModal, setShowPostStudioModal] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showAuthGatewayModal, setShowAuthGatewayModal] = useState<boolean>(() => {
+    // Check if first visit without authenticated user
+    const saved = localStorage.getItem('autopilot_authenticated_user');
+    return !saved;
+  });
+  const [showAdminApprovalHubModal, setShowAdminApprovalHubModal] = useState(false);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPostGroup, setSelectedPostGroup] = useState<SocialMediaPostGroup | null>(null);
 
@@ -170,6 +180,19 @@ export function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  const fetchPendingRequestsCount = async () => {
+    try {
+      const res = await fetch('/api/auth/requests');
+      if (res.ok) {
+        const data = await res.json();
+        const pending = (data.requests || []).filter((r: any) => r.status === 'pending').length;
+        setPendingRequestsCount(pending);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   const fetchAllData = async () => {
     try {
       const fetchJson = async (url: string, defaultVal: any) => {
@@ -182,13 +205,14 @@ export function App() {
         }
       };
 
-      const [statusRes, brainRes, bufferRes, postsRes, insightsRes, workspacesRes] = await Promise.all([
+      const [statusRes, brainRes, bufferRes, postsRes, insightsRes, workspacesRes, reqRes] = await Promise.all([
         fetchJson('/api/status', {}),
         fetchJson('/api/brand-brain', null),
         fetchJson('/api/buffer-config', null),
         fetchJson('/api/post-groups', []),
         fetchJson('/api/strategy-insights', []),
         fetchJson('/api/workspaces', {}),
+        fetchJson('/api/auth/requests', { requests: [] }),
       ]);
 
       if (statusRes?.scheduler) setSchedulerState(statusRes.scheduler);
@@ -204,6 +228,11 @@ export function App() {
       if (workspacesRes?.workspaces) setWorkspaces(workspacesRes.workspaces);
       if (workspacesRes?.activeWorkspaceId) setActiveWorkspaceId(workspacesRes.activeWorkspaceId);
 
+      if (reqRes?.requests) {
+        const pending = reqRes.requests.filter((r: any) => r.status === 'pending').length;
+        setPendingRequestsCount(pending);
+      }
+
       if (brainRes) setBrandBrain(brainRes);
       if (bufferRes) setBufferConfig(bufferRes);
       if (Array.isArray(postsRes)) setPostGroups(postsRes);
@@ -211,6 +240,25 @@ export function App() {
     } catch (err) {
       console.warn('Backend sync:', err);
     }
+  };
+
+  const handleAuthSuccess = (user: UserAccount) => {
+    setShowAuthGatewayModal(false);
+    const convertedProfile: UserProfile = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      avatarInitials: user.avatarInitials,
+      role: user.role === 'author' ? 'Agency Owner & Lead Author' : `${user.role.toUpperCase()} Reviewer`,
+      avatarColor: user.avatarColor || 'from-[#e5be49] to-[#a68424]',
+      plan: user.plan || 'enterprise',
+      joinedDate: user.joinedDate || 'August 2024',
+      status: 'active',
+      bio: user.bio,
+    };
+    setCurrentUser(convertedProfile);
+    localStorage.setItem('autopilot-current-user', JSON.stringify(convertedProfile));
+    fetchAllData();
   };
 
   const handleSelectUser = (user: UserProfile) => {
@@ -762,6 +810,21 @@ export function App() {
               </button>
             </div>
 
+            {/* Admin Approvals & Gmail Dispatch Button */}
+            <button
+              onClick={() => setShowAdminApprovalHubModal(true)}
+              className="btn-secondary hidden lg:inline-flex text-[11px] !py-1.5 !px-2.5 font-semibold border-blue-500/30 text-blue-300 hover:!bg-blue-500/10 items-center gap-1.5 shadow-sm"
+              title="Admin Access Requests & Gmail Integration Hub"
+            >
+              <ShieldCheck className="h-3.5 w-3.5 text-blue-400" />
+              <span>Approvals</span>
+              {pendingRequestsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold animate-pulse">
+                  {pendingRequestsCount}
+                </span>
+              )}
+            </button>
+
             {/* AI Post Studio Quick Action */}
             <button
               onClick={() => setShowPostStudioModal(true)}
@@ -776,7 +839,7 @@ export function App() {
             <button
               onClick={() => setShowUserProfileModal(true)}
               className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] transition-all"
-              title={`Logged in as ${currentUser.name} • Click to manage`}
+              title={`Logged in as ${currentUser.name} • Click to manage or switch account`}
             >
               <div
                 className={`flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br ${
@@ -878,6 +941,38 @@ export function App() {
       </div>
 
       {/* ===== 3. MODALS ===== */}
+      {showAuthGatewayModal && (
+        <AuthGatewayModal
+          isOpen={showAuthGatewayModal}
+          onClose={() => setShowAuthGatewayModal(false)}
+          workspaces={workspaces}
+          onAuthSuccess={handleAuthSuccess}
+        />
+      )}
+
+      {showAdminApprovalHubModal && (
+        <AdminApprovalHubModal
+          isOpen={showAdminApprovalHubModal}
+          onClose={() => setShowAdminApprovalHubModal(false)}
+          currentUser={{
+            id: currentUser.id,
+            name: currentUser.name,
+            email: currentUser.email,
+            username: currentUser.email.split('@')[0],
+            role: currentUser.id === 'user_asab' || currentUser.name.toLowerCase().includes('asab') ? 'author' : 'reviewer',
+            status: 'approved',
+            workspaceId: activeWorkspaceId,
+            avatarInitials: currentUser.avatarInitials,
+            avatarColor: currentUser.avatarColor,
+            joinedDate: currentUser.joinedDate,
+            bio: currentUser.bio,
+            plan: currentUser.plan,
+          }}
+          workspaces={workspaces}
+          onRefreshUsers={fetchAllData}
+        />
+      )}
+
       {showUserProfileModal && (
         <UserProfileModal
           isOpen={showUserProfileModal}
@@ -895,6 +990,15 @@ export function App() {
             setShowUserProfileModal(false);
             setShowBrandBrainModal(true);
           }}
+          onOpenAdminApprovals={() => {
+            setShowUserProfileModal(false);
+            setShowAdminApprovalHubModal(true);
+          }}
+          onOpenAuthGateway={() => {
+            setShowUserProfileModal(false);
+            setShowAuthGatewayModal(true);
+          }}
+          pendingApprovalsCount={pendingRequestsCount}
         />
       )}
 

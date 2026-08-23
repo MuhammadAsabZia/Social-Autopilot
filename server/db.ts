@@ -2,11 +2,15 @@ import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import {
+  AccessRequest,
   BrandBrainConfig,
   BufferConfig,
+  EmailLog,
+  GmailIntegrationState,
   SchedulerState,
   SocialMediaPostGroup,
   TrendCandidate,
+  UserAccount,
   WeeklyStrategyInsight,
   WorkspaceProfile,
 } from '../src/types.js';
@@ -23,6 +27,10 @@ export interface DatabaseSchema {
   postGroups: SocialMediaPostGroup[];
   trendHistory: TrendCandidate[];
   strategyInsights: WeeklyStrategyInsight[];
+  users: UserAccount[];
+  accessRequests: AccessRequest[];
+  gmailState: GmailIntegrationState;
+  emailLogs: EmailLog[];
   logs: { timestamp: string; level: 'info' | 'warn' | 'error'; message: string; details?: any }[];
 }
 
@@ -209,38 +217,91 @@ const INITIAL_SEED_POST_GROUPS: SocialMediaPostGroup[] = [
   },
 ];
 
-const INITIAL_STRATEGY_INSIGHTS: WeeklyStrategyInsight[] = [
+const INITIAL_USERS: UserAccount[] = [
   {
-    id: 'strat_week_01',
-    weekStarting: '2026-08-18',
-    analysisSummary:
-      'Technical architecture teardowns and concrete workflow benchmarks generate 3.4x higher engagement and qualified inbound leads than general industry news.',
-    bestTopics: [
-      'Deterministic AI Agent architectures & state machines',
-      'Zapier + Custom API webhook automation recipes',
-      'Replacing repetitive enterprise operations with custom SaaS tools',
-    ],
-    bestHooks: [
-      'Contrarian diagnostic hooks ("Most AI agent pilots fail in week 3 because...")',
-      'ROI before/after numbers ("Reduced response time from 4 hours to 45 seconds...")',
-    ],
-    bestFormats: [
-      { platform: 'linkedin', format: 'Technical Teardown + Step-by-Step Architecture', reason: 'High save rate and executive reposts' },
-      { platform: 'instagram', format: '4-Slide Visual Flowchart Carousel', reason: 'Highest swipe-through rate (84%)' },
-      { platform: 'facebook', format: 'Relatable Business Problem Question', reason: 'Encourages organic comment threads from founders' },
-    ],
-    bestPostingTimes: ['09:30 AM PST (Tue/Thu)', '08:00 AM PST (Wed)'],
-    bestContentCategories: ['AI Agents (45%)', 'API & Zapier Integrations (30%)', 'SaaS Architecture (25%)'],
-    actionableRecommendations: [
-      'Double down on concrete code/diagram snippets showing how custom webhooks connect to LLMs.',
-      'Maintain the 70% service expertise / 20% trends / 10% experimental mix ratio.',
-      'Incorporate more real client migration case studies with specific percentage improvements.',
-    ],
-    contentMixAdherence: {
-      servicePercentage: 72,
-      trendPercentage: 18,
-      experimentalPercentage: 10,
-    },
+    id: 'usr_admin_asab',
+    username: 'asab',
+    name: 'Asab Siddiqui',
+    email: 'Asabsiddx2000@gmail.com',
+    password: 'password123',
+    role: 'author',
+    status: 'approved',
+    workspaceId: 'ws_agency_default',
+    avatarInitials: 'AS',
+    avatarColor: 'from-blue-600 to-indigo-600',
+    joinedDate: '2026-01-15',
+    bio: 'Platform Author, AI Systems Architect & Founder. Full administrative authority.',
+    plan: 'enterprise',
+  },
+  {
+    id: 'usr_alex_reviewer',
+    username: 'alex',
+    name: 'Alex Rivera',
+    email: 'alex@growthagency.ai',
+    password: 'password123',
+    role: 'reviewer',
+    status: 'approved',
+    workspaceId: 'ws_agency_default',
+    avatarInitials: 'AR',
+    avatarColor: 'from-emerald-600 to-teal-600',
+    joinedDate: '2026-02-10',
+    bio: 'Senior Growth Strategist. Content review and queue approval access.',
+    plan: 'pro',
+  },
+  {
+    id: 'usr_mara_viewer',
+    username: 'mara',
+    name: 'Mara Chen',
+    email: 'mara.rivera@autopilot.studio',
+    password: 'password123',
+    role: 'client',
+    status: 'approved',
+    workspaceId: 'ws_agency_default',
+    avatarInitials: 'MC',
+    avatarColor: 'from-purple-600 to-pink-600',
+    joinedDate: '2026-03-01',
+    bio: 'Client Partner & Content Marketing Lead.',
+    plan: 'pro',
+  },
+];
+
+const INITIAL_ACCESS_REQUESTS: AccessRequest[] = [
+  {
+    id: 'req_demo_001',
+    name: 'Marcus Vance',
+    username: 'marcus_v',
+    email: 'marcus.vance@techscale.co',
+    password: 'password123',
+    requestedRole: 'reviewer',
+    requestedWorkspaceId: 'ws_agency_default',
+    status: 'pending',
+    createdAt: new Date(Date.now() - 3600 * 1000 * 4).toISOString(),
+    notificationSentToAdmin: true,
+    confirmationSentToUser: false,
+    approvalToken: 'tok_demo_approve_001',
+    notes: 'Content Strategist at TechScale requesting reviewer queue access.',
+  },
+];
+
+const INITIAL_GMAIL_STATE: GmailIntegrationState = {
+  isConnected: true,
+  adminEmail: 'Asabsiddx2000@gmail.com',
+  lastSyncTime: new Date().toISOString(),
+  autoApproveDomains: ['@autopilot.studio'],
+  autoApproveAll: false,
+  sentEmailCount: 3,
+};
+
+const INITIAL_EMAIL_LOGS: EmailLog[] = [
+  {
+    id: 'email_log_001',
+    to: 'Asabsiddx2000@gmail.com',
+    from: 'Asabsiddx2000@gmail.com',
+    subject: '[Access Request] New User Registration: Marcus Vance (marcus.vance@techscale.co)',
+    type: 'admin_approval_request',
+    sentAt: new Date(Date.now() - 3600 * 1000 * 4).toISOString(),
+    status: 'sent',
+    messagePreview: 'A new user has submitted a registration request on the Autopilot Command Center.',
   },
 ];
 
@@ -299,6 +360,10 @@ class DatabaseService {
           postGroups: parsed.postGroups || INITIAL_SEED_POST_GROUPS,
           trendHistory: parsed.trendHistory || [],
           strategyInsights: parsed.strategyInsights || INITIAL_STRATEGY_INSIGHTS,
+          users: parsed.users && parsed.users.length > 0 ? parsed.users : INITIAL_USERS,
+          accessRequests: parsed.accessRequests || INITIAL_ACCESS_REQUESTS,
+          gmailState: parsed.gmailState || INITIAL_GMAIL_STATE,
+          emailLogs: parsed.emailLogs || INITIAL_EMAIL_LOGS,
           logs: parsed.logs || [],
         };
       } catch (err) {
@@ -315,6 +380,10 @@ class DatabaseService {
       postGroups: INITIAL_SEED_POST_GROUPS,
       trendHistory: [],
       strategyInsights: INITIAL_STRATEGY_INSIGHTS,
+      users: INITIAL_USERS,
+      accessRequests: INITIAL_ACCESS_REQUESTS,
+      gmailState: INITIAL_GMAIL_STATE,
+      emailLogs: INITIAL_EMAIL_LOGS,
       logs: [{ timestamp: new Date().toISOString(), level: 'info', message: 'Social Media Autopilot DB initialized.' }],
     };
     this.saveData(initialDb);
@@ -450,6 +519,226 @@ class DatabaseService {
 
   public getLogs() {
     return this.data.logs.slice(-100);
+  }
+
+  // --- User Accounts & Access Control ---
+  public getUsers(): UserAccount[] {
+    return this.data.users || [];
+  }
+
+  public getUserByEmail(email: string): UserAccount | undefined {
+    const clean = email.trim().toLowerCase();
+    return (this.data.users || []).find((u) => u.email.toLowerCase() === clean);
+  }
+
+  public getUserByUsername(username: string): UserAccount | undefined {
+    const clean = username.trim().toLowerCase();
+    return (this.data.users || []).find((u) => u.username.toLowerCase() === clean);
+  }
+
+  public createUser(user: Partial<UserAccount> & { email: string; name: string }): UserAccount {
+    const newUser: UserAccount = {
+      id: user.id || `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      username: user.username || user.email.split('@')[0],
+      name: user.name,
+      email: user.email.trim().toLowerCase(),
+      password: user.password || 'password123',
+      role: user.role || 'reviewer',
+      status: user.status || 'approved',
+      workspaceId: user.workspaceId || this.getActiveWorkspaceId(),
+      avatarInitials: user.name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2) || 'US',
+      avatarColor: user.avatarColor || 'from-indigo-600 to-purple-600',
+      joinedDate: new Date().toISOString().split('T')[0],
+      bio: user.bio || 'Active team member on the Autopilot Command Center.',
+      plan: user.plan || 'pro',
+    };
+
+    if (!this.data.users) this.data.users = [];
+    // Remove if exists with same email
+    this.data.users = this.data.users.filter((u) => u.email.toLowerCase() !== newUser.email.toLowerCase());
+    this.data.users.push(newUser);
+    this.saveData(this.data);
+    this.addLog('info', `Created / Updated user account: "${newUser.name}" (${newUser.email})`);
+    return newUser;
+  }
+
+  public updateUser(id: string, updates: Partial<UserAccount>): UserAccount | undefined {
+    const idx = (this.data.users || []).findIndex((u) => u.id === id);
+    if (idx >= 0) {
+      this.data.users[idx] = { ...this.data.users[idx], ...updates };
+      this.saveData(this.data);
+      return this.data.users[idx];
+    }
+    return undefined;
+  }
+
+  public deleteUser(id: string): boolean {
+    const prev = (this.data.users || []).length;
+    this.data.users = (this.data.users || []).filter((u) => u.id !== id);
+    this.saveData(this.data);
+    return this.data.users.length < prev;
+  }
+
+  // --- Access Requests & Admin Approvals ---
+  public getAccessRequests(): AccessRequest[] {
+    return this.data.accessRequests || [];
+  }
+
+  public getAccessRequestById(id: string): AccessRequest | undefined {
+    return (this.data.accessRequests || []).find((r) => r.id === id);
+  }
+
+  public createAccessRequest(params: {
+    name: string;
+    username: string;
+    email: string;
+    password?: string;
+    requestedRole?: 'reviewer' | 'client' | 'author' | 'viewer';
+    requestedWorkspaceId?: string;
+    notes?: string;
+  }): { request: AccessRequest; autoApproved: boolean; user?: UserAccount } {
+    const email = params.email.trim().toLowerCase();
+    const token = `tok_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+    // Check if auto-approve applies
+    const gmailState = this.getGmailState();
+    const isDomainAutoApproved = gmailState.autoApproveDomains.some((d) => email.endsWith(d.toLowerCase()));
+    const shouldAutoApprove = gmailState.autoApproveAll || isDomainAutoApproved;
+
+    const request: AccessRequest = {
+      id: `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      name: params.name.trim(),
+      username: params.username.trim().toLowerCase(),
+      email,
+      password: params.password || 'password123',
+      requestedRole: params.requestedRole || 'reviewer',
+      requestedWorkspaceId: params.requestedWorkspaceId || this.getActiveWorkspaceId(),
+      status: shouldAutoApprove ? 'approved' : 'pending',
+      createdAt: new Date().toISOString(),
+      reviewedAt: shouldAutoApprove ? new Date().toISOString() : undefined,
+      reviewedBy: shouldAutoApprove ? 'System (Auto-Rule)' : undefined,
+      notes: params.notes || 'Submitted via public registration gateway.',
+      notificationSentToAdmin: true,
+      confirmationSentToUser: shouldAutoApprove,
+      approvalToken: token,
+    };
+
+    if (!this.data.accessRequests) this.data.accessRequests = [];
+    this.data.accessRequests.unshift(request);
+
+    let user: UserAccount | undefined;
+    if (shouldAutoApprove) {
+      user = this.createUser({
+        name: request.name,
+        username: request.username,
+        email: request.email,
+        password: request.password,
+        role: request.requestedRole,
+        workspaceId: request.requestedWorkspaceId,
+        status: 'approved',
+      });
+    }
+
+    this.saveData(this.data);
+    this.addLog(
+      'info',
+      `Access request registered for "${request.name}" (${request.email}) - Status: ${request.status}`
+    );
+
+    return { request, autoApproved: shouldAutoApprove, user };
+  }
+
+  public approveAccessRequest(id: string, reviewer: string = 'Author Admin (Asab Siddiqui)'): { success: boolean; user?: UserAccount; request?: AccessRequest } {
+    const req = (this.data.accessRequests || []).find((r) => r.id === id);
+    if (!req) return { success: false };
+
+    req.status = 'approved';
+    req.reviewedAt = new Date().toISOString();
+    req.reviewedBy = reviewer;
+    req.confirmationSentToUser = true;
+
+    // Create or activate the user account
+    const user = this.createUser({
+      name: req.name,
+      username: req.username,
+      email: req.email,
+      password: req.password,
+      role: req.requestedRole,
+      workspaceId: req.requestedWorkspaceId,
+      status: 'approved',
+    });
+
+    this.saveData(this.data);
+    this.addLog('info', `Admin approved access request for "${req.name}" (${req.email})`);
+    return { success: true, user, request: req };
+  }
+
+  public rejectAccessRequest(id: string, reviewer: string = 'Author Admin (Asab Siddiqui)'): boolean {
+    const req = (this.data.accessRequests || []).find((r) => r.id === id);
+    if (!req) return false;
+
+    req.status = 'rejected';
+    req.reviewedAt = new Date().toISOString();
+    req.reviewedBy = reviewer;
+
+    this.saveData(this.data);
+    this.addLog('warn', `Admin rejected access request for "${req.name}" (${req.email})`);
+    return true;
+  }
+
+  // --- Gmail Integration State & Logs ---
+  public getGmailState(): GmailIntegrationState {
+    return (
+      this.data.gmailState || {
+        isConnected: true,
+        adminEmail: 'Asabsiddx2000@gmail.com',
+        autoApproveDomains: ['@autopilot.studio'],
+        autoApproveAll: false,
+        sentEmailCount: 0,
+      }
+    );
+  }
+
+  public updateGmailState(updates: Partial<GmailIntegrationState>): GmailIntegrationState {
+    this.data.gmailState = { ...this.getGmailState(), ...updates };
+    this.saveData(this.data);
+    return this.data.gmailState;
+  }
+
+  public getEmailLogs(): EmailLog[] {
+    return this.data.emailLogs || [];
+  }
+
+  public addEmailLog(log: Omit<EmailLog, 'id' | 'sentAt'> & { id?: string; sentAt?: string }): EmailLog {
+    const newLog: EmailLog = {
+      id: log.id || `email_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      to: log.to,
+      from: log.from || 'Asabsiddx2000@gmail.com',
+      subject: log.subject,
+      type: log.type,
+      sentAt: log.sentAt || new Date().toISOString(),
+      status: log.status,
+      messagePreview: log.messagePreview || '',
+    };
+
+    if (!this.data.emailLogs) this.data.emailLogs = [];
+    this.data.emailLogs.unshift(newLog);
+    if (this.data.emailLogs.length > 100) {
+      this.data.emailLogs = this.data.emailLogs.slice(0, 100);
+    }
+
+    if (this.data.gmailState) {
+      this.data.gmailState.sentEmailCount = (this.data.gmailState.sentEmailCount || 0) + 1;
+      this.data.gmailState.lastSyncTime = new Date().toISOString();
+    }
+
+    this.saveData(this.data);
+    return newLog;
   }
 
   // Transient/persistent media asset map

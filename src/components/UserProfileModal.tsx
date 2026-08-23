@@ -78,6 +78,9 @@ interface UserProfileModalProps {
   onUpdateCurrentUser: (updated: Partial<UserProfile>) => void;
   onOpenBufferSettings: () => void;
   onOpenBrandBrain: () => void;
+  onOpenAdminApprovals?: () => void;
+  onOpenAuthGateway?: () => void;
+  pendingApprovalsCount?: number;
 }
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
@@ -90,6 +93,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onUpdateCurrentUser,
   onOpenBufferSettings,
   onOpenBrandBrain,
+  onOpenAdminApprovals,
+  onOpenAuthGateway,
+  pendingApprovalsCount = 0,
 }) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'switch' | 'invite' | 'roadmap'>('profile');
   
@@ -349,7 +355,32 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between pt-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {onOpenAdminApprovals && (
+                      <button
+                        type="button"
+                        onClick={onOpenAdminApprovals}
+                        className="btn-secondary text-xs !py-1.5 !px-3 border-blue-500/30 text-blue-300 hover:bg-blue-500/10 flex items-center gap-1.5"
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5 text-blue-400" />
+                        <span>Admin Approvals & Gmail</span>
+                        {pendingApprovalsCount > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500 text-black font-extrabold">
+                            {pendingApprovalsCount}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                    {onOpenAuthGateway && (
+                      <button
+                        type="button"
+                        onClick={onOpenAuthGateway}
+                        className="btn-secondary text-xs !py-1.5 !px-3 flex items-center gap-1.5"
+                      >
+                        <LogOut className="h-3.5 w-3.5 text-amber-400" />
+                        <span>Switch Account / Sign Out</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={onOpenBufferSettings}

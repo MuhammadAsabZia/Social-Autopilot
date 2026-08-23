@@ -247,3 +247,57 @@ export interface AutopilotRunProgress {
   generatedGroup?: SocialMediaPostGroup;
   error?: string;
 }
+
+export interface UserAccount {
+  id: string;
+  username: string;
+  name: string;
+  email: string;
+  password?: string;
+  role: 'author' | 'reviewer' | 'client' | 'viewer';
+  status: 'approved' | 'pending' | 'rejected';
+  workspaceId: string;
+  avatarInitials: string;
+  avatarColor?: string;
+  joinedDate: string;
+  bio?: string;
+  plan?: 'starter' | 'pro' | 'enterprise';
+}
+
+export interface AccessRequest {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  password?: string;
+  requestedRole: 'reviewer' | 'client' | 'author' | 'viewer';
+  requestedWorkspaceId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  notes?: string;
+  notificationSentToAdmin: boolean;
+  confirmationSentToUser: boolean;
+  approvalToken: string;
+}
+
+export interface GmailIntegrationState {
+  isConnected: boolean;
+  adminEmail: string;
+  lastSyncTime?: string;
+  autoApproveDomains: string[];
+  autoApproveAll: boolean;
+  sentEmailCount: number;
+}
+
+export interface EmailLog {
+  id: string;
+  to: string;
+  from: string;
+  subject: string;
+  type: 'admin_approval_request' | 'user_approval_confirmation' | 'custom_invite';
+  sentAt: string;
+  status: 'sent' | 'simulated' | 'failed';
+  messagePreview?: string;
+}
