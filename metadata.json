@@ -1,0 +1,6 @@
+{
+  "name": "Social Media Autopilot",
+  "description": "Autonomous AI social media strategist and manager with Google Search trend research, platform adaptation for LinkedIn, Instagram and Facebook, visual generation, quality control, and Buffer publishing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
