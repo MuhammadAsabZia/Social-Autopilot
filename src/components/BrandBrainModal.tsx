@@ -1,11 +1,5 @@
 import React, { useState } from 'react';
 import { Brain, Check, Plus, Save, Trash2, X, Zap } from 'lucide-react';
-import { BrandBrainConfig } from '../types.js';
-
-interface BrandBrainModalProps { config: BrandBrainConfig; isOpen: boolean; onClose: () => void; onSave: (updated: BrandBrainConfig) => void; }
-
-import React, { useState } from 'react';
-import { Brain, Check, Plus, Save, Trash2, X, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BrandBrainConfig } from '../types.js';
 
@@ -27,31 +21,31 @@ export const BrandBrainModal: React.FC<BrandBrainModalProps> = ({ config, isOpen
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/85 backdrop-blur-xl"
           />
           <motion.div 
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0a0c10]/90 backdrop-blur-xl shadow-2xl z-10"
+            className="relative w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl border border-white/[0.14] bg-[#0c0f17] shadow-[0_25px_60px_rgba(0,0,0,0.9)] z-10"
           >
-            <div className="flex items-center justify-between border-b border-white/5 p-6 bg-white/5">
+            <div className="flex items-center justify-between border-b border-white/[0.08] p-6 bg-[#111520]">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[--accent]/10 border border-[--accent]/20 shadow-[0_0_15px_rgba(212,175,55,0.1)]">
                   <Brain className="h-5 w-5 text-[--accent]" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-[18px]">Brand Intelligence</h3>
+                  <h3 className="font-bold text-white text-[18px]">Brand Intelligence & Positioning</h3>
                   <p className="text-[11px] text-[--muted] uppercase tracking-wider font-semibold">Core Configuration</p>
                 </div>
               </div>
-              <button onClick={onClose} className="btn-icon !h-8 !w-8"><X className="h-4 w-4" /></button>
+              <button onClick={onClose} className="p-1.5 rounded-lg text-[--muted] hover:text-white hover:bg-white/[0.06] transition-colors"><X className="h-4 w-4" /></button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
@@ -144,7 +138,5 @@ export const BrandBrainModal: React.FC<BrandBrainModalProps> = ({ config, isOpen
         </div>
       )}
     </AnimatePresence>
-  );
-};
   );
 };

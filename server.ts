@@ -8,10 +8,13 @@ import { db } from './server/db.js';
 import {
   analyzeWeeklyStrategy,
   auditQualityControl,
+  generateCustomStudioPost,
   generateMultiPlatformPosts,
+  generateViralHookMatrix,
   researchTrendsWithSearch,
   scoreTrendCandidates,
 } from './server/gemini.js';
+import { generatePlatformVisualAssets } from './server/images.js';
 import { BackgroundScheduler } from './server/scheduler.js';
 
 async function startServer() {
@@ -33,6 +36,31 @@ async function startServer() {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
+  // Workspaces (Micro-SaaS Multi-Brand Support)
+  app.get('/api/workspaces', (req, res) => {
+    res.json({
+      workspaces: db.getWorkspaces(),
+      activeWorkspaceId: db.getActiveWorkspaceId(),
+    });
+  });
+
+  app.post('/api/workspaces/switch', (req, res) => {
+    const { workspaceId } = req.body;
+    const switched = db.switchWorkspace(workspaceId);
+    if (!switched) {
+      return res.status(404).json({ success: false, error: 'Workspace not found' });
+    }
+    BackgroundScheduler.recalculateNextRun();
+    res.json({ success: true, workspace: switched, brandBrain: db.getBrandBrain(), bufferConfig: db.getBufferConfig() });
+  });
+
+  app.post('/api/workspaces/create', (req, res) => {
+    const { name, brandBrain, bufferConfig } = req.body;
+    const created = db.createWorkspace(name, brandBrain, bufferConfig);
+    BackgroundScheduler.recalculateNextRun();
+    res.json({ success: true, workspace: created });
+  });
+
   // Overall App & Scheduler Status
   app.get('/api/status', (req, res) => {
     const schedulerState = db.getSchedulerState();
@@ -41,11 +69,15 @@ async function startServer() {
     const postGroups = db.getPostGroups();
     const latestPost = postGroups[0] || null;
     const progress = getCurrentProgress();
+    const workspaces = db.getWorkspaces();
+    const activeWorkspaceId = db.getActiveWorkspaceId();
 
     res.json({
       scheduler: schedulerState,
       progress,
       latestPost,
+      workspaces,
+      activeWorkspaceId,
       stats: {
         totalPosts: postGroups.length,
         publishedCount: postGroups.filter((p) => p.overallStatus === 'published').length,
@@ -55,6 +87,100 @@ async function startServer() {
         automationEnabled: schedulerState.enabled,
       },
     });
+  });
+
+  // AI Post Studio: Custom Post Generator Co-Pilot
+  app.post('/api/studio/generate', async (req, res) => {
+    try {
+      const { topic, strategicAngle, framework = 'contrarian', toneOfVoice, targetAudience, includeFirstComment = true, generateVisual = true } = req.body;
+      if (!topic || typeof topic !== 'string' || !topic.trim()) {
+        return res.status(400).json({ success: false, error: 'Topic is required.' });
+      }
+
+      const brandBrain = db.getBrandBrain();
+      const result = await generateCustomStudioPost(
+        {
+          topic: topic.trim(),
+          strategicAngle,
+          framework,
+          toneOfVoice,
+          targetAudience,
+          includeFirstComment,
+          generateVisual,
+        },
+        brandBrain
+      );
+
+      // Optionally generate visual artwork
+      if (generateVisual) {
+        try {
+          const visuals = await generatePlatformVisualAssets(
+            topic.trim(),
+            'Custom Studio Creation',
+            {
+              linkedin: {
+                prompt: result.postGroup.posts.linkedin.visualPrompt || topic.trim(),
+                hook: result.postGroup.posts.linkedin.hook,
+              },
+              instagram: {
+                prompt: result.postGroup.posts.instagram.visualPrompt || topic.trim(),
+                hook: result.postGroup.posts.instagram.hook,
+              },
+              facebook: {
+                prompt: result.postGroup.posts.facebook.visualPrompt || topic.trim(),
+                hook: result.postGroup.posts.facebook.hook,
+              },
+            }
+          );
+          if (visuals.linkedin?.visualImageUrl) result.postGroup.posts.linkedin.visualImageUrl = visuals.linkedin.visualImageUrl;
+          if (visuals.instagram?.visualImageUrl) result.postGroup.posts.instagram.visualImageUrl = visuals.instagram.visualImageUrl;
+          if (visuals.facebook?.visualImageUrl) result.postGroup.posts.facebook.visualImageUrl = visuals.facebook.visualImageUrl;
+        } catch (imgErr) {
+          console.warn('Studio visual generation warning:', imgErr);
+        }
+      }
+
+      const saved = db.savePostGroup(result.postGroup);
+      res.json({ success: true, postGroup: saved });
+    } catch (err: any) {
+      console.error('Error generating studio post:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // AI Post Studio: Viral Hook Matrix Generator
+  app.post('/api/studio/generate-hooks', async (req, res) => {
+    try {
+      const { topic, coreIdea } = req.body;
+      if (!topic || typeof topic !== 'string' || !topic.trim()) {
+        return res.status(400).json({ success: false, error: 'Topic is required.' });
+      }
+      const brandBrain = db.getBrandBrain();
+      const hooks = await generateViralHookMatrix(topic.trim(), coreIdea || topic.trim(), brandBrain);
+      res.json({ success: true, hooks });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // AI Post Studio: Live Imagen Visual Generator
+  app.post('/api/studio/generate-image', async (req, res) => {
+    try {
+      const { topic, prompt, platform = 'linkedin' } = req.body;
+      const visuals = await generatePlatformVisualAssets(
+        topic || 'AI Architecture Teardown',
+        'Custom Studio Creation',
+        {
+          linkedin: platform === 'linkedin' ? { prompt, hook: topic } : undefined,
+          instagram: platform === 'instagram' ? { prompt, hook: topic } : undefined,
+          facebook: platform === 'facebook' ? { prompt, hook: topic } : undefined,
+        }
+      );
+      const imageUrl = (visuals as any)[platform]?.visualImageUrl || visuals.linkedin?.visualImageUrl || visuals.instagram?.visualImageUrl || visuals.facebook?.visualImageUrl;
+      res.json({ success: true, imageUrl });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
   });
 
   // Brand Brain
@@ -75,23 +201,27 @@ async function startServer() {
   // Buffer Config & Connection Test via GraphQL API
   app.get('/api/buffer-config', (req, res) => {
     const rawConfig = db.getBufferConfig();
-    const rawKey = process.env.BUFFER_API_KEY || process.env.BUFFER_ACCESS_TOKEN || '';
-    const hasEnvKey = Boolean(rawKey.trim());
-    const apiKeyMasked = hasEnvKey ? `${rawKey.slice(0, 3)}••••••••${rawKey.slice(-4)}` : '';
+    const activeKey = BufferService.getApiKey();
+    const hasEnvKey = Boolean(activeKey.trim());
+    const apiKeyMasked = hasEnvKey
+      ? `${activeKey.slice(0, 4)}••••••••${activeKey.slice(-4)}`
+      : '';
 
     res.json({
       ...rawConfig,
       hasEnvKey,
       apiKeyMasked,
-      // Never expose the actual key string to client
+      // Never expose the raw key string in full to client
       accessToken: undefined,
     });
   });
 
   app.post('/api/buffer-config', (req, res) => {
     try {
-      // Sanitize: do not store raw key in JSON db if sent
       const payload = { ...req.body };
+      if (payload.apiKey && typeof payload.apiKey === 'string' && payload.apiKey.trim()) {
+        BufferService.setRuntimeApiKey(payload.apiKey.trim());
+      }
       delete payload.accessToken;
       const updated = db.updateBufferConfig(payload);
       res.json({ success: true, bufferConfig: updated });
@@ -103,8 +233,14 @@ async function startServer() {
   app.post('/api/buffer/test', async (req, res) => {
     const { apiKey } = req.body || {};
     try {
+      if (apiKey && typeof apiKey === 'string' && apiKey.trim()) {
+        BufferService.setRuntimeApiKey(apiKey.trim());
+      }
       const testResult = await BufferService.testConnection(apiKey);
       if (testResult.connected) {
+        if (apiKey && typeof apiKey === 'string' && apiKey.trim()) {
+          BufferService.setRuntimeApiKey(apiKey.trim());
+        }
         // Auto-match and update channels in database
         const currentConfig = db.getBufferConfig();
         const updatedChannels = { ...currentConfig.channels };
@@ -134,13 +270,19 @@ async function startServer() {
           });
         }
 
-        db.updateBufferConfig({
+        const updateData: any = {
           isConnected: true,
           isSimulatedMode: false,
+          hasEnvKey: true,
           organizationId: testResult.organizationId,
           organizationName: testResult.organizationName,
           channels: updatedChannels,
-        });
+        };
+        if (apiKey && typeof apiKey === 'string' && apiKey.trim()) {
+          updateData.apiKey = apiKey.trim();
+        }
+
+        db.updateBufferConfig(updateData);
       }
 
       res.json(testResult);

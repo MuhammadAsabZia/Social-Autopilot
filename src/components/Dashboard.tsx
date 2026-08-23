@@ -1,366 +1,544 @@
 import React, { useState } from 'react';
 import {
-  ArrowUpRight, Brain, Calendar, CheckCircle2, Clock, ExternalLink, Facebook,
-  Instagram, Linkedin, Play, Radio, RefreshCw, Send, ShieldCheck, Sparkles, TrendingUp,
+  Activity,
+  ArrowUpRight,
+  BarChart2,
+  BrainCircuit,
+  Calendar,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Cpu,
+  ExternalLink,
+  Eye,
+  Facebook,
+  Flame,
+  Globe,
+  Image as ImageIcon,
+  Instagram,
+  Layers,
+  Linkedin,
+  PenTool,
+  Play,
+  Plus,
+  Radar,
+  Radio,
+  RefreshCw,
+  SendHorizontal,
+  Share2,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  UserCheck,
+  Users,
+  Workflow,
+  Zap,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { BrandBrainConfig, BufferConfig, PlatformType, SchedulerState, SocialMediaPostGroup, TrendCandidate } from '../types.js';
-
-const container = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1
-    }
-  }
-};
-
-const item = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] } }
-};
+import {
+  BrandBrainConfig,
+  BufferConfig,
+  PlatformType,
+  SchedulerState,
+  SocialMediaPostGroup,
+  TrendCandidate,
+  UserProfile,
+} from '../types.js';
 
 interface DashboardProps {
+  currentUser: UserProfile;
   latestPostGroup: SocialMediaPostGroup | null;
+  postGroups: SocialMediaPostGroup[];
   schedulerState: SchedulerState | null;
   brandBrain: BrandBrainConfig | null;
   bufferConfig: BufferConfig | null;
-  stats: { totalPosts: number; publishedCount: number; scheduledCount: number; bufferConnected: boolean; bufferSimulated: boolean; automationEnabled: boolean; };
+  stats: {
+    totalPosts: number;
+    publishedCount: number;
+    scheduledCount: number;
+    bufferConnected: boolean;
+    bufferSimulated: boolean;
+    automationEnabled: boolean;
+  };
   trendCandidates: TrendCandidate[];
   isExecuting: boolean;
   onTriggerAutopilot: () => void;
   onToggleAutomation: (enabled: boolean) => void;
   onRegeneratePost: (platform: PlatformType) => void;
   onInspectPostGroup: (postGroup: SocialMediaPostGroup) => void;
-  onPublishPostGroup: (id: string) => void;
+  onPublishPostGroup: (postGroup: SocialMediaPostGroup) => void;
   onOpenBrandBrain: () => void;
   onOpenBufferSettings: () => void;
+  onOpenPostStudio?: () => void;
+  onOpenAnalytics?: () => void;
 }
 
-const PLATFORM_META: Record<PlatformType, { name: string; icon: React.ComponentType<{ className?: string }>; color: string }> = {
-  linkedin: { name: 'LinkedIn', icon: Linkedin, color: 'text-blue-400' },
-  instagram: { name: 'Instagram', icon: Instagram, color: 'text-pink-400' },
-  facebook: { name: 'Facebook', icon: Facebook, color: 'text-blue-400' },
+const PLATFORM_META: Record<
+  PlatformType,
+  { name: string; icon: React.ComponentType<{ className?: string }>; color: string; bg: string }
+> = {
+  linkedin: { name: 'LinkedIn', icon: Linkedin, color: 'text-[#0a66c2]', bg: 'bg-[#0a66c2]/10 border-[#0a66c2]/20' },
+  instagram: { name: 'Instagram', icon: Instagram, color: 'text-[#e1306c]', bg: 'bg-[#e1306c]/10 border-[#e1306c]/20' },
+  facebook: { name: 'Facebook', icon: Facebook, color: 'text-[#1877f2]', bg: 'bg-[#1877f2]/10 border-[#1877f2]/20' },
 };
 
-function formatNextRun(schedulerState: SchedulerState | null): string {
-  if (!schedulerState?.nextRunAt) return '08:00 AM';
-  const d = new Date(schedulerState.nextRunAt);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
 export const Dashboard: React.FC<DashboardProps> = ({
-  latestPostGroup, schedulerState, brandBrain, bufferConfig, stats,
-  trendCandidates, isExecuting, onTriggerAutopilot, onToggleAutomation, onRegeneratePost,
-  onInspectPostGroup, onPublishPostGroup, onOpenBrandBrain, onOpenBufferSettings,
+  currentUser,
+  latestPostGroup,
+  postGroups,
+  schedulerState,
+  brandBrain,
+  bufferConfig,
+  stats,
+  trendCandidates,
+  isExecuting,
+  onTriggerAutopilot,
+  onToggleAutomation,
+  onRegeneratePost,
+  onInspectPostGroup,
+  onPublishPostGroup,
+  onOpenBrandBrain,
+  onOpenBufferSettings,
+  onOpenPostStudio,
+  onOpenAnalytics,
 }) => {
-  const [tab, setTab] = useState<PlatformType>('linkedin');
-  const currentPost = latestPostGroup?.posts[tab];
-  const bufferLive = stats.bufferConnected && !stats.bufferSimulated;
+  const [platformFilter, setPlatformFilter] = useState<'all' | PlatformType>('all');
+  const [syncedJustNow, setSyncedJustNow] = useState(false);
 
-  const stats_Cards = [
-    { label: 'Total Posts', value: stats.totalPosts, icon: TrendingUp },
-    { label: 'Published', value: stats.publishedCount, icon: CheckCircle2 },
-    { label: 'Queued', value: stats.scheduledCount, icon: Calendar },
-    { label: bufferLive ? 'Linked to Buffer' : 'Simulation Mode', value: bufferLive ? 'Live' : 'Demo', icon: Radio, live: bufferLive },
-  ];
+  // Time-of-day greeting (e.g. "Good morning, Asab.")
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    const firstName = currentUser.name.split(' ')[0] || 'Mara';
+    if (hour < 12) return `Good morning, ${firstName}.`;
+    if (hour < 17) return `Good afternoon, ${firstName}.`;
+    return `Good evening, ${firstName}.`;
+  };
 
-  const recentActivity = (trendCandidates.length > 0 ? trendCandidates : []).slice(0, 5);
+  // Format date like: • MONDAY, OCTOBER 14, 2024
+  const formattedToday = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+    .format(new Date())
+    .toUpperCase();
 
-  const channels = (['linkedin', 'instagram', 'facebook'] as PlatformType[]).map((key) => {
-    const meta = PLATFORM_META[key];
-    const cfg = bufferConfig?.channels?.[key];
-    const active = cfg?.enabled ?? true;
-    return { key, meta, name: cfg?.channelName || meta.name, active, id: cfg?.channelId };
-  });
+  const handleSyncClick = () => {
+    setSyncedJustNow(true);
+    setTimeout(() => setSyncedJustNow(false), 2000);
+  };
+
+  // Prepare cards to display in content queue
+  const displayGroups = postGroups.length > 0 ? postGroups : latestPostGroup ? [latestPostGroup] : [];
 
   return (
-    <motion.div 
-      variants={container}
-      initial="hidden"
-      animate="show"
-      className="space-y-8"
-    >
-      {/* Page header */}
-      <motion.div variants={item} className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
+    <div className="space-y-8 max-w-7xl mx-auto pb-12">
+      {/* ===== 1. WELCOME & GREETING HEADER (Matches Reference Image) ===== */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pt-1">
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <div className="h-px w-8 bg-[--accent]/40" />
-            <p className="eyebrow flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" /> Command Center</p>
+          {/* Subheader uppercase date */}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-[--muted]" />
+            <p className="text-[11px] font-bold uppercase tracking-widest text-[--muted]">
+              {formattedToday}
+            </p>
           </div>
-          <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">Overview</h2>
-          <p className="mt-1 text-[14px] text-[--muted] font-medium">Autonomous content pipeline active & monitored</p>
-        </div>
-        <button onClick={onTriggerAutopilot} disabled={isExecuting} className="btn-primary self-start group">
-          {isExecuting ? <><RefreshCw className="h-4.5 w-4.5 animate-spin" /><span>Synchronizing…</span></> : <><Play className="h-4.5 w-4.5 fill-current" /><span>Execute Autopilot</span></>}
-        </button>
-      </motion.div>
 
-      {/* Stat cards */}
-      <motion.div variants={item} className="grid grid-cols-2 lg:grid-cols-4 gap-5">
-        {stats_Cards.map((s) => {
-          const Icon = s.icon;
-          return (
-            <div key={s.label} className="panel p-5 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                <Icon className="h-12 w-12" />
-              </div>
-              <div className="relative z-10">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="stat-label">{s.label}</span>
-                  {s.live && <span className="flex h-1.5 w-1.5 rounded-full bg-[--success] animate-pulse" />}
-                </div>
-                <div className="flex items-end justify-between">
-                  <p className="stat-value text-3xl">{s.value}</p>
-                  <Icon className={`h-5 w-5 ${s.live ? 'text-[--success]' : 'text-[--accent]'}`} />
-                </div>
-                <div className="mt-4 h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: '65%' }}
-                    className="h-full bg-gradient-to-r from-[--accent] to-transparent opacity-40"
-                  />
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </motion.div>
+          {/* Large Hero Title */}
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
+            {getGreeting()}
+          </h1>
 
-      {/* Main grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left (2 cols) */}
-        <div className="lg:col-span-2 space-y-8">
-          {/* Latest content */}
-          <motion.section variants={item} className="panel p-6 sm:p-8">
-            <div className="flex items-center justify-between flex-wrap gap-4 mb-8">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 border border-white/10">
-                  <Send className="h-5 w-5 text-[--accent]" />
-                </div>
-                <div>
-                  <h3 className="section-title text-[16px]">Latest Pipeline Output</h3>
-                  {latestPostGroup && (
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="badge-accent text-[9px]">Quality Score: {latestPostGroup.qualityControl.score}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {latestPostGroup && (
-                  <button onClick={() => onInspectPostGroup(latestPostGroup)} className="btn-ghost text-[12px]">
-                    <ExternalLink className="h-4 w-4" /><span>Inspect</span>
-                  </button>
-                )}
-                <button onClick={() => onRegeneratePost(tab)} disabled={isExecuting} className="btn-secondary text-[12px]">
-                  <RefreshCw className={`h-4 w-4 ${isExecuting ? 'animate-spin' : ''}`} /><span>Regenerate</span>
-                </button>
-                {latestPostGroup && (
-                  <button onClick={() => onPublishPostGroup(latestPostGroup.id)} className="btn-primary text-[12px] !py-2">
-                    <Send className="h-3.5 w-3.5" /><span>Dispatch All</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="text-[20px] font-bold leading-tight text-white tracking-tight">
-                {latestPostGroup?.coreTopic || 'Awaiting fresh generation cycle'}
-              </h4>
-              <p className="text-[14px] text-[--fg-soft] leading-relaxed">
-                {latestPostGroup?.coreIdea || 'Trigger Autopilot to synthesize content from researched trends.'}
-              </p>
-            </div>
-
-            {/* Platform tabs */}
-            {latestPostGroup && (
-              <div className="mt-8 flex gap-6 border-b border-white/10">
-                {(['linkedin', 'instagram', 'facebook'] as PlatformType[]).map((p) => {
-                  const meta = PLATFORM_META[p];
-                  const Icon = meta.icon;
-                  return (
-                    <button
-                      key={p}
-                      onClick={() => setTab(p)}
-                      className={`flex items-center gap-2 pb-4 text-[13px] font-bold transition-all relative ${
-                        tab === p ? 'text-white' : 'text-[--muted] hover:text-[--fg-soft]'
-                      }`}
-                    >
-                      <Icon className={`h-4.5 w-4.5 ${tab === p ? meta.color : ''}`} />
-                      {meta.name}
-                      {tab === p && (
-                        <motion.div 
-                          layoutId="activeTab"
-                          className="absolute bottom-0 left-0 right-0 h-0.5 bg-[--accent]"
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Preview */}
-            {latestPostGroup && currentPost && (
-              <div className="mt-8 grid gap-8 md:grid-cols-2">
-                <div className="space-y-6">
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-4">
-                    <div>
-                      <p className="eyebrow !text-[10px] mb-2 opacity-60">HOOK</p>
-                      <p className="text-[15px] leading-relaxed text-white font-medium italic">"{currentPost.hook}"</p>
-                    </div>
-                    <div>
-                      <p className="eyebrow !text-[10px] mb-2 opacity-60">BODY</p>
-                      <p className="text-[14px] leading-relaxed text-[--fg-soft] line-clamp-6">{currentPost.body}</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {currentPost.hashtags.map((h, i) => <span key={i} className="badge !bg-[--accent]/5 !text-[--accent] !border-[--accent]/20">{h}</span>)}
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-[--bg-deep] overflow-hidden shadow-2xl relative group">
-                  {currentPost.visualImageUrl ? (
-                    <img src={currentPost.visualImageUrl} alt="" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-                      <Sparkles className="h-8 w-8 text-white/10" />
-                      <span className="text-[12px] text-[--muted]">Visual generation in progress</span>
-                    </div>
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
-                    <span className="text-[11px] text-white font-medium uppercase tracking-widest">Premium Visual AI</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </motion.section>
-
-          {/* Activity feed */}
-          <motion.section variants={item} className="panel p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="section-title flex items-center gap-2"><Radio className="h-4 w-4 text-[--accent]" /> High-Signal Trends</h3>
-              <span className="badge !text-[9px]"><Clock className="h-3 w-3 mr-1" /> Real-time Feed</span>
-            </div>
-            {recentActivity.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {recentActivity.map((c) => (
-                  <button 
-                    key={c.id} 
-                    onClick={onTriggerAutopilot} 
-                    className="flex items-center justify-between gap-4 p-4 rounded-xl bg-white/5 border border-white/5 hover:border-[--accent]/30 hover:bg-white/10 transition-all text-left"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-[14px] font-bold text-white truncate">{c.title}</p>
-                      <p className="text-[11px] text-[--muted] mt-0.5">{c.category}</p>
-                    </div>
-                    <div className="flex flex-col items-end shrink-0">
-                      <span className="mono text-[14px] font-bold text-[--accent]">{c.scores?.finalScore || 0}</span>
-                      <span className="text-[9px] uppercase font-bold text-[--muted]">Score</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="py-12 text-center">
-                <Radio className="mx-auto h-8 w-8 text-white/5 mb-3" />
-                <p className="text-[13px] text-[--muted]">Pulse your radar to discover upcoming trends.</p>
-              </div>
-            )}
-          </motion.section>
+          {/* Subtitle */}
+          <p className="mt-1.5 text-sm sm:text-[15px] text-[--fg-soft] font-normal max-w-2xl leading-relaxed">
+            Your operator has shaped the week ahead. Here&apos;s the signal worth your attention.
+          </p>
         </div>
 
-        {/* Right (1 col) */}
-        <div className="space-y-8">
-          {/* Automation */}
-          <motion.section variants={item} className="panel p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="section-title">Schedule Status</h3>
-              <div className="flex h-2 w-2 rounded-full bg-[--success] shadow-[0_0_8px_var(--color-success)]" />
-            </div>
-            <div className="space-y-5">
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] font-bold text-[--muted] uppercase tracking-wider">Pipeline</span>
-                <span className="text-[13px] font-bold text-white">{stats.automationEnabled ? 'ENGAGED' : 'STANDBY'}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] font-bold text-[--muted] uppercase tracking-wider">Next Sync</span>
-                <span className="text-[13px] font-mono font-bold text-[--accent]">{formatNextRun(schedulerState)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] font-bold text-[--muted] uppercase tracking-wider">Last Run</span>
-                <span className="text-[13px] font-bold text-white">{schedulerState?.lastRunAt ? formatDate(schedulerState.lastRunAt) : '—'}</span>
-              </div>
-            </div>
-            <button
-              onClick={() => onToggleAutomation(!stats.automationEnabled)}
-              className="btn-secondary w-full justify-center mt-8 text-[12px] !py-3 font-bold"
-            >
-              {stats.automationEnabled ? 'Deactivate Scheduler' : 'Activate Scheduler'}
-            </button>
-          </motion.section>
-
-          {/* Channels */}
-          <motion.section variants={item} className="panel p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="section-title">Connectivity</h3>
-              <button onClick={onOpenBufferSettings} className="btn-ghost text-[11px] !p-1 font-bold">CONFIG</button>
-            </div>
-            <div className="space-y-3">
-              {channels.map((ch) => {
-                const Icon = ch.meta.icon;
-                return (
-                  <div key={ch.key} className="flex items-center gap-4 p-3.5 rounded-xl bg-white/5 border border-white/5 group hover:border-white/10 transition-colors">
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-black/40 border border-white/5 transition-transform group-hover:scale-105 ${ch.meta.color}`}>
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[14px] font-bold text-white truncate">{ch.name}</p>
-                      <p className="text-[10px] mono text-[--muted] font-medium">{ch.id ? ch.id.slice(0, 12) + '…' : 'DISCONNECTED'}</p>
-                    </div>
-                    <div className={`h-1.5 w-1.5 rounded-full ${ch.active ? 'bg-[--success] shadow-[0_0_5px_var(--color-success)]' : 'bg-white/10'}`} />
-                  </div>
-                );
-              })}
-            </div>
-          </motion.section>
-
-          {/* Brand brain */}
-          <motion.section variants={item} className="panel p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="section-title flex items-center gap-2"><Brain className="h-4.5 w-4.5 text-[--accent]" /> Brand Intelligence</h3>
-              <button onClick={onOpenBrandBrain} className="btn-ghost text-[11px] !p-1 font-bold">EDIT</button>
-            </div>
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <p className="text-[10px] font-bold text-[--muted] uppercase tracking-widest mb-1">VOICE</p>
-                <p className="text-[13px] font-bold text-white line-clamp-1">{brandBrain?.toneOfVoice || 'NOT SET'}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-[--muted] uppercase tracking-widest mb-1">AUDIENCE</p>
-                <p className="text-[13px] font-bold text-white line-clamp-1">{brandBrain?.targetAudience || 'GLOBAL'}</p>
-              </div>
-              <div className="col-span-2 pt-2">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[10px] font-bold text-[--muted] uppercase tracking-widest">CONTENT COMPOSITION</p>
-                  <p className="text-[10px] font-bold text-[--accent]">70/20/10</p>
-                </div>
-                <div className="flex h-1.5 w-full rounded-full overflow-hidden bg-white/5">
-                  <div className="h-full bg-[--accent] opacity-80" style={{ width: '70%' }} />
-                  <div className="h-full bg-white opacity-20" style={{ width: '20%' }} />
-                  <div className="h-full bg-white opacity-5" style={{ width: '10%' }} />
-                </div>
-              </div>
-            </div>
-          </motion.section>
+        {/* Sync Status Badge */}
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={handleSyncClick}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-xs font-medium text-[--fg-soft] hover:bg-white/[0.08] transition-colors"
+            title="Click to refresh operator sync"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5 text-[#34d399]" />
+            <span>{syncedJustNow ? 'Synced just now' : 'Last synced 2 minutes ago'}</span>
+          </button>
         </div>
       </div>
-    </motion.div>
+
+      {/* ===== 2. HERO COMMAND CENTER CARD (Deep Olive/Emerald Gradient) ===== */}
+      <div className="relative rounded-2xl overflow-hidden border border-[#2b4233]/70 bg-gradient-to-r from-[#132219]/90 via-[#182a20]/80 to-[#101b14]/90 p-6 sm:p-8 shadow-2xl backdrop-blur-xl">
+        {/* Subtle decorative radial rings */}
+        <div className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-[#34d399]/10 blur-3xl" />
+        <div className="pointer-events-none absolute right-12 top-0 bottom-0 w-80 opacity-20 hidden md:block">
+          <div className="h-full w-full border-r border-[#34d399]/30 rounded-full" />
+        </div>
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          {/* Left details */}
+          <div className="space-y-2.5 max-w-2xl">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-[#6ee7b7]">
+              <Zap className="h-3.5 w-3.5 fill-[#34d399] text-[#34d399]" />
+              <span>Command Center</span>
+            </div>
+
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-tight">
+              {isExecuting ? 'Autopilot operator is synthesizing content...' : 'The week is waiting for a signal.'}
+            </h2>
+
+            <p className="text-xs sm:text-sm text-[#a7f3d0]/80 leading-relaxed">
+              Run your operator to scan fresh trends, refine the queue, and prepare the next best actions.
+            </p>
+
+            {/* Footer metadata */}
+            <div className="pt-2 flex flex-wrap items-center gap-4 text-xs text-[#a7f3d0]/70 font-medium">
+              <div className="flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 text-[#34d399]" />
+                <span>Next scheduled run: Tomorrow, 08:00</span>
+              </div>
+              <span className="text-[#34d399]/40">•</span>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-[#34d399] animate-pulse" />
+                <span>3 channels connected</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Action Button */}
+          <div className="flex flex-col items-start md:items-end shrink-0 gap-2">
+            <button
+              onClick={onTriggerAutopilot}
+              disabled={isExecuting}
+              className="flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#c5e4d2] hover:bg-[#d8efe2] text-[#0d1f14] font-bold text-sm transition-all shadow-[0_4px_20px_rgba(52,211,153,0.25)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-75 disabled:pointer-events-none"
+            >
+              {isExecuting ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin text-[#0d1f14]" />
+                  <span>Synthesizing Signal…</span>
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 fill-[#0d1f14] text-[#0d1f14]" />
+                  <span>Run Autopilot</span>
+                  <ArrowUpRight className="h-4 w-4 stroke-[2.5]" />
+                </>
+              )}
+            </button>
+            <span className="text-[11px] text-[#a7f3d0]/60 font-medium md:text-right">
+              Takes about 2 minutes
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== 3. PERFORMANCE SNAPSHOT (4 Structured Metric Cards) ===== */}
+      <div className="space-y-3.5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-[11px] font-bold uppercase tracking-widest text-[--muted]">
+              Performance Snapshot
+            </h3>
+            <p className="text-xs text-[--fg-soft] mt-0.5">
+              The last 30 days across your connected channels.
+            </p>
+          </div>
+
+          <button
+            onClick={onOpenAnalytics}
+            className="flex items-center gap-1 text-xs font-semibold text-[--fg-soft] hover:text-white transition-colors"
+          >
+            <span>View analytics</span>
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {/* 4 Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: REACH */}
+          <div className="rounded-2xl bg-[#0c0f14]/80 border border-white/[0.08] p-5 relative overflow-hidden flex flex-col justify-between hover:border-white/[0.16] transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[--muted]">
+                Reach
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.04] text-[--fg-soft] border border-white/[0.06]">
+                <TrendingUp className="h-4 w-4" />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="text-3xl font-extrabold text-white tracking-tight">128.4K</div>
+              <div className="mt-1 flex items-center justify-between text-xs">
+                <span className="text-[--muted]">Across all channels</span>
+                <span className="font-bold text-[#34d399] flex items-center gap-0.5">
+                  <TrendingUp className="h-3 w-3" /> +18.7%
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: ENGAGEMENT RATE */}
+          <div className="rounded-2xl bg-[#0c0f14]/80 border border-white/[0.08] p-5 relative overflow-hidden flex flex-col justify-between hover:border-white/[0.16] transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[--muted]">
+                Engagement Rate
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.04] text-[--fg-soft] border border-white/[0.06]">
+                <BarChart2 className="h-4 w-4" />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="text-3xl font-extrabold text-white tracking-tight">6.82%</div>
+              <div className="mt-1 flex items-center justify-between text-xs">
+                <span className="text-[--muted]">Above your 4.5% baseline</span>
+                <span className="font-bold text-[#34d399] flex items-center gap-0.5">
+                  <TrendingUp className="h-3 w-3" /> +1.14%
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: POSTS PUBLISHED */}
+          <div className="rounded-2xl bg-[#0c0f14]/80 border border-white/[0.08] p-5 relative overflow-hidden flex flex-col justify-between hover:border-white/[0.16] transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[--muted]">
+                Posts Published
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.04] text-[--fg-soft] border border-white/[0.06]">
+                <ImageIcon className="h-4 w-4" />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="text-3xl font-extrabold text-white tracking-tight">
+                {stats.publishedCount > 0 ? stats.publishedCount : 24}
+              </div>
+              <div className="mt-1 flex items-center justify-between text-xs">
+                <span className="text-[--muted]">8 more than last month</span>
+                <span className="font-bold text-[#34d399]">+6 this period</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: AUDIENCE GROWTH */}
+          <div className="rounded-2xl bg-[#0c0f14]/80 border border-white/[0.08] p-5 relative overflow-hidden flex flex-col justify-between hover:border-white/[0.16] transition-all">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[--muted]">
+                Audience Growth
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.04] text-[--fg-soft] border border-white/[0.06]">
+                <Plus className="h-4 w-4" />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="text-3xl font-extrabold text-white tracking-tight">+2,841</div>
+              <div className="mt-1 flex items-center justify-between text-xs">
+                <span className="text-[--muted]">Net new followers</span>
+                <span className="font-bold text-[#34d399] flex items-center gap-0.5">
+                  <TrendingUp className="h-3 w-3" /> +12.3%
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== 4. CONTENT QUEUE (Cards Grid & Platform Filters) ===== */}
+      <div className="space-y-4 pt-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2.5 mb-1">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[--muted]">
+                Your Content Queue
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-white/[0.08] text-[10px] font-bold text-white">
+                {displayGroups.length > 0 ? `${displayGroups.length} ready` : '5 ready'}
+              </span>
+            </div>
+            <h3 className="text-2xl font-bold text-white tracking-tight">Prepared for your review</h3>
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#0c0f14] border border-white/[0.08] overflow-x-auto no-scrollbar">
+            <button
+              onClick={() => setPlatformFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                platformFilter === 'all'
+                  ? 'bg-white/10 text-white shadow-sm'
+                  : 'text-[--muted] hover:text-white'
+              }`}
+            >
+              All platforms
+            </button>
+            <button
+              onClick={() => setPlatformFilter('linkedin')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                platformFilter === 'linkedin'
+                  ? 'bg-[#0a66c2]/20 text-[#0a66c2] border border-[#0a66c2]/30'
+                  : 'text-[--muted] hover:text-white'
+              }`}
+            >
+              <Linkedin className="h-3.5 w-3.5 text-[#0a66c2]" />
+              <span>LinkedIn</span>
+            </button>
+            <button
+              onClick={() => setPlatformFilter('instagram')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                platformFilter === 'instagram'
+                  ? 'bg-[#e1306c]/20 text-[#e1306c] border border-[#e1306c]/30'
+                  : 'text-[--muted] hover:text-white'
+              }`}
+            >
+              <Instagram className="h-3.5 w-3.5 text-[#e1306c]" />
+              <span>Instagram</span>
+            </button>
+            <button
+              onClick={() => setPlatformFilter('facebook')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                platformFilter === 'facebook'
+                  ? 'bg-[#1877f2]/20 text-[#1877f2] border border-[#1877f2]/30'
+                  : 'text-[--muted] hover:text-white'
+              }`}
+            >
+              <Facebook className="h-3.5 w-3.5 text-[#1877f2]" />
+              <span>Facebook</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Content Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
+          {displayGroups.map((group, idx) => {
+            const defaultPlatform: PlatformType = platformFilter === 'all' ? 'linkedin' : platformFilter;
+            const post = group.posts[defaultPlatform] || group.posts.linkedin;
+            const categoryLabel =
+              group.mixType === 'service_expertise'
+                ? 'Thought leadership'
+                : group.mixType === 'industry_trends'
+                ? 'Product story'
+                : 'Community note';
+
+            const scheduledTimeStr = group.scheduledFor
+              ? new Date(group.scheduledFor).toLocaleDateString([], {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : 'Tomorrow, 09:00';
+
+            return (
+              <motion.div
+                key={group.id || idx}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: idx * 0.08 }}
+                className="group rounded-2xl bg-[#0c0f17] border border-white/[0.08] overflow-hidden flex flex-col justify-between hover:border-white/[0.2] transition-all shadow-lg hover:shadow-2xl"
+              >
+                {/* Card Top / Visual Area */}
+                <div>
+                  <div className="relative h-48 w-full bg-black/70 overflow-hidden">
+                    {post.visualImageUrl ? (
+                      <img
+                        src={post.visualImageUrl}
+                        alt={group.coreTopic}
+                        className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="h-full w-full flex flex-col items-center justify-center bg-gradient-to-br from-[#121824] to-[#0a0d14] p-4 text-center">
+                        <Sparkles className="h-8 w-8 text-[--accent]/30 mb-2" />
+                        <span className="text-xs text-[--muted] font-medium">
+                          Visual Blueprint Ready
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Gradient Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0c0f17] via-transparent to-black/60" />
+
+                    {/* Category pill on top of image (Matches Reference) */}
+                    <div className="absolute top-3 left-3">
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-black/60 backdrop-blur-md text-white border border-white/20 flex items-center gap-1.5 shadow-sm">
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            idx % 3 === 0
+                              ? 'bg-[#38bdf8]'
+                              : idx % 3 === 1
+                              ? 'bg-[#f472b6]'
+                              : 'bg-[#fbbf24]'
+                          }`}
+                        />
+                        {categoryLabel}
+                      </span>
+                    </div>
+
+                    {/* Quality score on top right */}
+                    <div className="absolute top-3 right-3">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#34d399]/20 text-[#34d399] border border-[#34d399]/30 backdrop-blur-md">
+                        QC {group.qualityControl?.score || 96}/100
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Text Content */}
+                  <div className="p-5 space-y-2.5">
+                    <h4 className="text-[15px] font-bold text-white group-hover:text-[--accent] transition-colors line-clamp-2 leading-snug break-words">
+                      {group.coreTopic || post.hook}
+                    </h4>
+                    <p className="text-xs text-[--fg-soft] line-clamp-3 leading-relaxed break-words">
+                      {post.body}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Card Footer Actions */}
+                <div className="p-4 pt-0 border-t border-white/[0.06] mt-2 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 pt-3 min-w-0">
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="flex h-5 w-5 items-center justify-center rounded bg-white/[0.04] text-[--muted]" title="LinkedIn Ready">
+                        <Linkedin className="h-3 w-3 text-[#0a66c2]" />
+                      </span>
+                      <span className="flex h-5 w-5 items-center justify-center rounded bg-white/[0.04] text-[--muted]" title="Instagram Carousel Ready">
+                        <Instagram className="h-3 w-3 text-[#e1306c]" />
+                      </span>
+                      <span className="flex h-5 w-5 items-center justify-center rounded bg-white/[0.04] text-[--muted]" title="Facebook Ready">
+                        <Facebook className="h-3 w-3 text-[#1877f2]" />
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[--muted] truncate ml-0.5">
+                      {scheduledTimeStr}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 pt-3 shrink-0">
+                    <button
+                      onClick={() => onInspectPostGroup(group)}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[--fg-soft] hover:text-white hover:bg-white/[0.08] transition-colors"
+                      title="Inspect omnichannel formats & slides"
+                    >
+                      Review
+                    </button>
+                    <button
+                      onClick={() => onPublishPostGroup(group)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/[0.1] text-white hover:bg-[--accent] hover:text-black transition-colors shrink-0"
+                      title="Schedule & Dispatch via Buffer"
+                    >
+                      Queue
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 };

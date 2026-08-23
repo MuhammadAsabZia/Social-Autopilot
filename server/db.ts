@@ -8,12 +8,15 @@ import {
   SocialMediaPostGroup,
   TrendCandidate,
   WeeklyStrategyInsight,
+  WorkspaceProfile,
 } from '../src/types.js';
 
 const DATA_DIR = path.join(process.cwd(), '.data');
 const DB_FILE = path.join(DATA_DIR, 'autopilot-db.json');
 
 export interface DatabaseSchema {
+  workspaces?: WorkspaceProfile[];
+  activeWorkspaceId?: string;
   brandBrain: BrandBrainConfig;
   bufferConfig: BufferConfig;
   schedulerState: SchedulerState;
@@ -256,11 +259,40 @@ class DatabaseService {
 
   private loadData(): DatabaseSchema {
     this.ensureDir();
+    const defaultWorkspaces: WorkspaceProfile[] = [
+      {
+        id: 'ws_agency_default',
+        name: 'Executive AI Agency',
+        brandBrain: DEFAULT_BRAND_BRAIN,
+        bufferConfig: DEFAULT_BUFFER_CONFIG,
+        isDefault: true,
+      },
+      {
+        id: 'ws_personal_asab',
+        name: 'Founder Personal Brand',
+        brandBrain: {
+          ...DEFAULT_BRAND_BRAIN,
+          brandPositioning: 'Pragmatic Founder & Micro-SaaS Builder automating real-world businesses.',
+          toneOfVoice: 'Vulnerable, transparent, metric-driven founder lessons and technical teardowns.',
+        },
+        bufferConfig: {
+          ...DEFAULT_BUFFER_CONFIG,
+          channels: {
+            linkedin: { channelId: 'buf_linkedin_personal', channelName: 'Personal LinkedIn Profile', enabled: true },
+            instagram: { channelId: 'buf_instagram_personal', channelName: 'Personal Creator IG', enabled: true },
+            facebook: { channelId: 'buf_fb_personal', channelName: 'Personal / Community Group', enabled: true },
+          },
+        },
+      },
+    ];
+
     if (fs.existsSync(DB_FILE)) {
       try {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
         return {
+          workspaces: parsed.workspaces || defaultWorkspaces,
+          activeWorkspaceId: parsed.activeWorkspaceId || 'ws_agency_default',
           brandBrain: { ...DEFAULT_BRAND_BRAIN, ...parsed.brandBrain },
           bufferConfig: { ...DEFAULT_BUFFER_CONFIG, ...parsed.bufferConfig },
           schedulerState: { ...DEFAULT_SCHEDULER_STATE, ...parsed.schedulerState },
@@ -275,6 +307,8 @@ class DatabaseService {
     }
 
     const initialDb: DatabaseSchema = {
+      workspaces: defaultWorkspaces,
+      activeWorkspaceId: 'ws_agency_default',
       brandBrain: DEFAULT_BRAND_BRAIN,
       bufferConfig: DEFAULT_BUFFER_CONFIG,
       schedulerState: DEFAULT_SCHEDULER_STATE,
@@ -290,6 +324,44 @@ class DatabaseService {
   private saveData(data: DatabaseSchema) {
     this.ensureDir();
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  }
+
+  public getWorkspaces(): WorkspaceProfile[] {
+    return this.data.workspaces || [];
+  }
+
+  public getActiveWorkspaceId(): string {
+    return this.data.activeWorkspaceId || 'ws_agency_default';
+  }
+
+  public switchWorkspace(workspaceId: string): WorkspaceProfile | undefined {
+    const ws = (this.data.workspaces || []).find(w => w.id === workspaceId);
+    if (ws) {
+      this.data.activeWorkspaceId = workspaceId;
+      this.data.brandBrain = { ...ws.brandBrain };
+      this.data.bufferConfig = { ...ws.bufferConfig };
+      this.saveData(this.data);
+      this.addLog('info', `Switched active workspace to: "${ws.name}"`);
+      return ws;
+    }
+    return undefined;
+  }
+
+  public createWorkspace(name: string, brandBrain?: BrandBrainConfig, bufferConfig?: BufferConfig): WorkspaceProfile {
+    const newWs: WorkspaceProfile = {
+      id: `ws_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      name: name.trim() || 'New Brand Workspace',
+      brandBrain: brandBrain || { ...this.data.brandBrain },
+      bufferConfig: bufferConfig || { ...this.data.bufferConfig },
+    };
+    if (!this.data.workspaces) this.data.workspaces = [];
+    this.data.workspaces.push(newWs);
+    this.data.activeWorkspaceId = newWs.id;
+    this.data.brandBrain = { ...newWs.brandBrain };
+    this.data.bufferConfig = { ...newWs.bufferConfig };
+    this.saveData(this.data);
+    this.addLog('info', `Created new workspace profile: "${newWs.name}"`);
+    return newWs;
   }
 
   public getBrandBrain(): BrandBrainConfig {

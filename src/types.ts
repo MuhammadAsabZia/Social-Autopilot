@@ -167,6 +167,49 @@ export interface BufferConfig {
   accessToken?: string;
 }
 
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  avatarInitials: string;
+  role: string; // e.g. "Studio account", "Founder & Lead Strategist", "Agency Owner"
+  avatarColor?: string;
+  plan?: 'starter' | 'pro' | 'enterprise';
+  bufferApiKeyMasked?: string;
+  bio?: string;
+  joinedDate?: string;
+  status: 'active' | 'pending';
+}
+
+export interface WorkspaceProfile {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  brandBrain: BrandBrainConfig;
+  bufferConfig: BufferConfig;
+  isDefault?: boolean;
+}
+
+export interface ViralHookVariation {
+  id: string;
+  type: 'contrarian' | 'data_backed' | 'storytelling' | 'question_hook' | 'bold_claim';
+  label: string;
+  hookText: string;
+  viralityScore: number; // 0-100
+  retentionRating: 'High' | 'Very High' | 'Exceptional';
+  frameworkNote: string;
+}
+
+export interface CustomStudioPostRequest {
+  topic: string;
+  strategicAngle?: string;
+  framework: 'contrarian' | 'data_backed' | 'story_driven' | 'step_by_step' | 'hot_take';
+  toneOfVoice?: string;
+  targetAudience?: string;
+  includeFirstComment?: boolean;
+  generateVisual?: boolean;
+}
+
 export interface SchedulerState {
   enabled: boolean;
   lastRunAt: string | null;

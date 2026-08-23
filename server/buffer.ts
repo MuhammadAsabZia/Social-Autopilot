@@ -30,6 +30,8 @@ function resolvePublicImageUrl(providedUrl?: string, platform: string = 'instagr
   return DEFAULT_PUBLIC_TECH_IMAGES[platform] || DEFAULT_PUBLIC_TECH_IMAGES.instagram;
 }
 
+let globalRuntimeBufferKey = '';
+
 export class BufferService {
   /**
    * Clean and normalize API key string
@@ -44,11 +46,29 @@ export class BufferService {
   }
 
   /**
-   * Get active Buffer API Key from environment or override
+   * Set runtime API key in memory
+   */
+  public static setRuntimeApiKey(key: string): void {
+    globalRuntimeBufferKey = this.cleanToken(key);
+  }
+
+  /**
+   * Get active Buffer API Key from override, runtime memory, db, or environment
    */
   public static getApiKey(overrideKey?: string): string {
     if (overrideKey && overrideKey.trim()) {
       return this.cleanToken(overrideKey);
+    }
+    if (globalRuntimeBufferKey && globalRuntimeBufferKey.trim()) {
+      return globalRuntimeBufferKey;
+    }
+    try {
+      const storedConfig = db.getBufferConfig();
+      if ((storedConfig as any).apiKey && (storedConfig as any).apiKey.trim()) {
+        return this.cleanToken((storedConfig as any).apiKey);
+      }
+    } catch {
+      // Ignore db access errors if any
     }
     const envKey = process.env.BUFFER_API_KEY || process.env.BUFFER_ACCESS_TOKEN || '';
     return this.cleanToken(envKey);
